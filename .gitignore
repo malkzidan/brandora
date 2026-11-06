@@ -1,0 +1,17 @@
+.env
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
+.DS_Store
+.idea/
+.vscode/
+
+# Private local/staging configuration; retain the public template.
+.env.*
+!.env.example
