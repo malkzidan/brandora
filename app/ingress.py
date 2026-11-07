@@ -8,6 +8,7 @@ class IntegrationIngress:
     def __init__(self,app,*,trusted_proxy_cidrs=()):
         self.app=app
         self.networks=[]
+        self.active_requests=0
         try:
             for value in trusted_proxy_cidrs:
                 network=ipaddress.ip_network(value,strict=True)
@@ -31,6 +32,12 @@ class IntegrationIngress:
             scope={**scope,"scheme":"https"}
         if scope["path"] not in {"/v2/ai/respond","/v2/ai/products/respond","/v2/ai/respond-with-context"}:
             return await self.app(scope,receive,send)
+        for name in (b"x-internal-token",b"x-ai-context",b"content-length"):
+            if sum(k.lower()==name for k,v in headers)>1:
+                return await JSONResponse({"detail":"Ambiguous request headers"},status_code=400)(scope,receive,send)
+        if self.active_requests >= 64:
+            return await JSONResponse({"detail":"Service capacity exceeded"},status_code=429,
+                                      headers={"Retry-After":"1"})(scope,receive,send)
         chunks=[]
         class TooLarge(Exception):
             pass
@@ -60,4 +67,8 @@ class IntegrationIngress:
                 pending=False
                 return {"type":"http.request","body":b"".join(chunks),"more_body":False}
             return await receive()
-        await self.app(scope,replay,send)
+        self.active_requests+=1
+        try:
+            await self.app(scope,replay,send)
+        finally:
+            self.active_requests-=1

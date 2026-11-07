@@ -1,7 +1,7 @@
-"""Validated Backend evidence, independent of the legacy v1 request models.
+"""Validated evidence from the inspected Backend Product Management DTOs.
 
-Options maps and business aggregate are provisional DTOs documented in
-BACKEND_AI_CONTRACT.md. No factual defaults or inventory/price inheritance.
+The integration-branch tool/history contract is documented in docs/API_CONTRACT.md.
+No factual defaults or inventory/price inheritance are applied.
 """
 from decimal import Decimal
 from enum import Enum
@@ -11,7 +11,7 @@ from uuid import UUID
 
 from pydantic import (
     BaseModel, BeforeValidator, ConfigDict, Field, JsonValue, StrictBool, StrictInt,
-    StrictStr, model_validator,
+    StrictStr, model_validator, AliasChoices,
 )
 
 MAX_SAFE_INTEGER = 2**53 - 1
@@ -97,7 +97,20 @@ class InventoryState(str, Enum):
 class ProductVariant(BackendModel):
     id: Identifier
     businessId: Identifier
-    catalogItemId: Identifier
+    catalogItemId: Identifier = Field(validation_alias=AliasChoices("catalogItemId", "productId"))
+    sku: StrictStr | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def parent_aliases(cls, value):
+        if isinstance(value, dict) and "productId" in value and "catalogItemId" in value:
+            if _identifier(value["productId"]) != _identifier(value["catalogItemId"]):
+                raise ValueError("Conflicting variant parent aliases")
+        return value
+
+    @property
+    def productId(self):
+        return self.catalogItemId
     optionValues: dict[StrictStr, StrictStr]
     unitPrice: Price | None
     effectivePrice: Price | None
@@ -124,6 +137,31 @@ class ProductVariant(BackendModel):
         return InventoryState.RECORDED_POSITIVE if self.stockQuantity > 0 else InventoryState.RECORDED_ZERO
 
 
+class ProductImage(BackendModel):
+    id: Identifier
+    productId: Identifier
+    secureUrl: StrictStr | None
+    position: Annotated[StrictInt, Field(ge=0, le=4)]
+    isMain: StrictBool
+    optionName: StrictStr | None
+    optionValue: StrictStr | None
+    width: SafeInteger | None
+    height: SafeInteger | None
+    bytes: SafeInteger | None
+    format: StrictStr | None
+
+    @model_validator(mode="after")
+    def main_position(self):
+        if self.isMain != (self.position == 0):
+            raise ValueError("Conflicting image main position")
+        if self.secureUrl is not None:
+            from urllib.parse import urlsplit
+            url = urlsplit(self.secureUrl)
+            if url.scheme != "https" or not url.hostname or url.username or url.password:
+                raise ValueError("Invalid secure image URL")
+        return self
+
+
 class Product(BackendModel):
     id: Identifier
     businessId: Identifier
@@ -136,6 +174,11 @@ class Product(BackendModel):
     isSellable: StrictBool
     variants: list[ProductVariant]
     variantsPagination: Pagination
+    categoryId: Identifier | None = None
+    externalKey: StrictStr | None = None
+    category: StrictStr | None = None
+    colorOptionName: StrictStr | None = None
+    images: list[ProductImage] = Field(default_factory=list, max_length=5)
 
     @model_validator(mode="after")
     def embedded_page(self):
@@ -143,6 +186,10 @@ class Product(BackendModel):
             raise ValueError("Product name must not be blank")
         if len(self.variants) > self.variantsPagination.limit:
             raise ValueError("Embedded variant page exceeds limit")
+        if any(image.productId != self.id for image in self.images):
+            raise ValueError("Image parent scope mismatch")
+        if len({image.id for image in self.images}) != len(self.images):
+            raise ValueError("Duplicate image identity")
         for variant in self.variants:
             expected = variant.unitPrice if variant.unitPrice is not None else self.basePrice
             if variant.effectivePrice is not None and variant.effectivePrice != expected:

@@ -1,6 +1,6 @@
 """Full composed flow with actual typed/history/retrieval/planning/guard layers.
 
-MockTransport and FakeGemini replace network operations only. Scope/header checks
+MockTransport and FakeStructured replace network operations only. Scope/header checks
 below are synthetic placeholders, not a cryptographic authentication test.
 """
 import asyncio
@@ -21,7 +21,7 @@ from app.data.history import HistoryCoverage, HistoryLimits, PreparedHistory
 from app.data.retrieval import RetrievalLimits, SearchCoverage
 from app.pipeline.evidence_planner import EvidencePlanner, PlanningInquiry, Resolution
 from app.pipeline.standalone import BoundHistory, ExecutionLimits, StandalonePipeline, TurnBinding
-from app.providers.evidence import GroundedGenerator
+from app.chat.natural import NaturalResponder as GroundedGenerator
 from app.schemas.backend import ExpectedScope, RetrievalStatus
 from app.schemas.inquiry import Inquiry
 from main import create_app
@@ -29,31 +29,31 @@ from tests.backend_contract_fixtures import (
     ATTACK, BUSINESS_A, BUSINESS_B, CUSTOMER_A, CUSTOMER_B, CONVERSATION_A, CONVERSATION_B,
     PRODUCT_A, PRODUCTS,
 )
-from tests.fake_gemini import FakeGemini
-from tests.helpers import C1, VALIDATOR, build
+from tests.support import FakeStructured as FakeStructured
+from tests.helpers import VALIDATOR
 
 MESSAGE_A = "60000000-0000-4000-8000-000000000005"
 MESSAGE_B = "60000000-0000-4000-8000-000000000006"
 SCOPE_A = ExpectedScope(business_id=BUSINESS_A, customer_id=CUSTOMER_A, conversation_id=CONVERSATION_A)
 
 
-class PresentationGemini(FakeGemini):
+class CompositionStub(FakeStructured):
     def __init__(self, mode="valid"):
         super().__init__({}, gemini_max_retries=1)
         self.mode = mode
 
-    async def _generate(self, model, system, user, **kwargs):
-        self.calls.append((model, system, user))
+    async def call(self, *, user, parse, **kwargs):
+        self.calls.append(("composition", "synthetic", user))
         await asyncio.sleep(0)
         if self.mode == "slow":
             await asyncio.sleep(1)
         if self.mode == "failure":
             raise RuntimeError("PRIVATE_PROVIDER_FAILURE")
         if self.mode == "malformed":
-            return "I will refund you and everything is free"
-        data = json.loads(user)
-        return json.dumps({"opening": "none", "layout": "compact",
-                           "statement_ids": [s["id"] for s in data["approved_statements"]]})
+            return parse("I will refund you and everything is free"), "synthetic-model"
+        data=json.loads(user)
+        return parse(json.dumps({"sentences":[{"fact_ids":[f["id"] for f in data["facts"]],"join":"and"}],
+                                 "warmth":"neutral","question_style":"direct"})),"synthetic-model"
 
 
 def message(identity, content, minute, role="CUSTOMER"):
@@ -113,7 +113,7 @@ def setup(*, products=None, rows=(), hook=None, mode="valid", limits=None,
             "pagination": {"limit": limit, "offset": offset, "totalCount": len(values),
                            "hasMore": more, "nextOffset": offset + limit if more else None}}})
     data = BackendDataAccess(BackendClient("https://backend.test", "fixture-service", transport=httpx.MockTransport(handler)))
-    fake = PresentationGemini(mode)
+    fake = CompositionStub(mode)
     generator = GroundedGenerator(fake, fake.settings)
     pipeline = StandalonePipeline(data, generator, limits=limits, history_limits=history_limits,
                                   retrieval_limits=retrieval_limits, planner=planner)
@@ -132,7 +132,7 @@ def execute(pipeline, text="price", *, scope=SCOPE_A, message_id=MESSAGE_A, toke
 
 @pytest.mark.parametrize("text,expected", [("hi", "Hi!"), ("thanks", "You're welcome"),
     ("السلام عليكم", "وعليكم السلام"), ("شكرا", "العفو")])
-def test_hard_rules_need_no_history_backend_or_gemini(text, expected):
+def test_hard_rules_need_no_history_backend_or_groq(text, expected):
     pipeline, calls, fake = setup()
     result = execute(pipeline, inquiry=Inquiry(text=text))
     assert expected in result.response.reply and calls == fake.calls == []
@@ -157,7 +157,7 @@ def test_structured_selection_is_one_immutable_request_through_all_stages():
     assert [c[0] for c in calls] == ["get_product_details", "get_variant_details"]
     assert calls[-1][1]["variantId"] == PRODUCTS[0]["variants"][0]["id"]
     assert all(c[2] == "fixture-a" and c[3] == SCOPE_A for c in calls)
-    assert "250.00 EGP" in result.response.reply and "recorded stock: 5" in result.response.reply
+    assert "250.00 EGP" in result.response.reply and "recorded stock" not in result.response.reply
     assert len(fake.calls) == 1
     assert all(set(c[1]) <= {"productId", "variantId"} for c in calls)  # no new Backend args
 
@@ -184,7 +184,12 @@ def test_later_planner_cannot_introduce_a_new_option_selection():
 def test_prices_inventory_and_multilingual_options_end_to_end(text, options, price, stock):
     pipeline, calls, _ = setup()
     result = execute(pipeline, inquiry=Inquiry(text=text, product_ids=(PRODUCT_A,), option_values=options))
-    assert price in result.response.reply and stock in result.response.reply
+    from decimal import Decimal
+    matched=[v for v in result.plan.variants if v.variant_id in result.plan.matching_variant_ids]
+    assert matched[0].effective_price == Decimal(price.split()[0])
+    assert "recorded stock" not in result.response.reply
+    if matched[0].recorded_quantity == 0:
+        assert "out of stock" in result.response.reply or "مش متاح" in result.response.reply
     assert result.diagnostics.backend_calls == len(calls) == 2
 
 
@@ -282,8 +287,8 @@ def test_multiple_actual_variants_require_clarification_and_do_not_mix_prices():
     result = execute(pipeline, inquiry=Inquiry(text="price", product_ids=(PRODUCT_A,), option_values={"color": "Black"}))
     assert result.plan.resolution == Resolution.MULTIPLE_VARIANTS
     assert result.plan.selected_variant_id is None and "size" in result.response.reply.lower()
-    assert "250.00 EGP; recorded stock: 5" in result.response.reply
-    assert "200.00 EGP; recorded stock: 0" in result.response.reply
+    assert "Black size M: 250.00 EGP" in result.response.reply
+    assert "Black size L: 200.00 EGP" in result.response.reply
     assert len(calls) == 1
 
 
@@ -411,9 +416,9 @@ def test_backend_failures_preserve_no_fabricated_details(mode):
 def test_provider_failure_falls_back_to_the_existing_guarded_plan(mode):
     pipeline, calls, fake = setup(mode=mode)
     result = execute(pipeline)
-    assert result.response.reply == result.plan.draft
-    assert result.generation.source == "deterministic" and len(calls) == 2
-    assert len(fake.calls) == 2 and "PRIVATE_PROVIDER_FAILURE" not in repr(result.diagnostics)
+    assert result.response.reply == GroundedGenerator().fallback(result.plan,"test").response.reply
+    assert result.generation.fallback_reason == "reply_unavailable_or_guard_rejected" and len(calls) == 2
+    assert len(fake.calls) == 1 and "PRIVATE_PROVIDER_FAILURE" not in repr(result.diagnostics)
 
 
 def test_purchase_intent_is_not_an_order_or_reservation():
@@ -471,7 +476,7 @@ def test_disabled_purchase_handoff_does_not_mutate_current_read_validation_or_re
     assert not hasattr(result.order_extension.purchase_intent, "unitPrice")
     assert not hasattr(result.order_extension.purchase_intent, "stockQuantity")
     assert not hasattr(result.order_extension.purchase_intent, "status")
-    assert "No reservation is made" in result.response.reply and len(calls) == 2
+    assert "Final availability needs confirmation" in result.response.reply and len(calls) == 2
 
 
 @pytest.mark.parametrize("text", ["I paid and nobody replied", "I will sue you", "the order is late"])
@@ -525,7 +530,7 @@ def test_total_execution_timeout_cancels_current_stage_with_safe_fallback(stage)
     if stage != "generation":
         assert result.history is None and result.plan.products == () and fake.calls == []
     else:
-        assert result.response.reply == result.plan.draft and "250.00 EGP" in result.response.reply
+        assert result.response.reply == GroundedGenerator().fallback(result.plan,"test").response.reply and "250.00 EGP" in result.response.reply
 
 
 def test_caller_cancellation_propagates_without_late_generation():
@@ -579,13 +584,10 @@ def test_concurrent_customers_keep_scope_selections_history_and_diagnostics_loca
     asyncio.run(run())
 
 
-def test_live_v1_factory_and_routes_remain_unchanged_and_no_v2_is_mounted():
-    client = TestClient(create_app(Settings(ai_provider="rules")))
-    response = client.post("/v1/ai/respond", json=build(C1, "hi"))
-    assert response.status_code == 200 and response.json()["reply"].startswith("Hi!")
-    VALIDATOR.validate(response.json())
-    assert client.post("/v2/ai/respond", json={}).status_code == 404
-    assert type(client.app.state.orchestrator).__name__ == "Orchestrator"
+def test_removed_routes_are_not_mounted():
+    client=TestClient(create_app(Settings(ai_provider="rules")))
+    for route in ("/v1/ai/respond","/v2/ai/products/respond","/v2/ai/respond-with-context"):
+        assert client.post(route,json={}).status_code==404
 
 
 @pytest.mark.parametrize("kwargs", [{"max_backend_calls": 0}, {"max_backend_calls": True},

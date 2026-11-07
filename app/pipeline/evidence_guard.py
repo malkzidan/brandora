@@ -15,13 +15,6 @@ from .evidence_planner import EvidencePlan, Resolution
 from ..schemas.response import AiResponse, E03Intent
 
 
-class Presentation(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
-    opening: Literal["none", "acknowledge", "helpful"]
-    layout: Literal["compact", "spaced"]
-    statement_ids: list[StrictStr] = Field(max_length=64)
-
-
 @dataclass(frozen=True)
 class GroundingLimits:
     max_prompt_characters: int = 16000
@@ -59,7 +52,7 @@ _OPENINGS = {
     "ar": {"none": "", "acknowledge": "تمام، دي المعلومات المسجلة.",
            "helpful": "أوضحلك المعلومات المسجلة."},
 }
-_KINDS = frozenset({"authorization_unavailable", "scope_mismatch", "owner_review", "hard_rule", "help",
+_KINDS = frozenset({"authorization_unavailable", "scope_mismatch", "owner_review", "hard_rule", "order_policy", "help",
                     "unsupported", "business_identity", "information_unverified", "product_identity",
                     "inactive_product", "inactive_variant", "variant_observation", "clarification", "observation_limit"})
 _TOOLS = frozenset({"get_products", "get_product_details", "get_product_variants", "get_variant_details", "get_business_info"})
@@ -123,40 +116,6 @@ def compile_manifest(plan: EvidencePlan, limits: GroundingLimits) -> StatementMa
                              tuple(s.text for s in plan.statements), plan.language)
 
 
-def parse_presentation(text: str | None, max_characters: int = 4096) -> Presentation:
-    if not isinstance(text, str) or len(text) > max_characters:
-        raise ValueError("invalid_presentation")
-    def unique(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError("invalid_presentation")
-            result[key] = value
-        return result
-    # Reject duplicate JSON keys and all free-text/unknown fields. GeminiClient
-    # retries these parse errors using its existing sanitized retry mechanism.
-    return Presentation.model_validate(json.loads(text, object_pairs_hook=unique))
-
-
-def guard_presentation(proposal: Presentation, manifest: StatementManifest) -> tuple[str, ...]:
-    return () if isinstance(proposal, Presentation) and tuple(proposal.statement_ids) == manifest.ids else ("statement_manifest_mismatch",)
-
-
-def render_presentation(plan: EvidencePlan, proposal: Presentation, manifest: StatementManifest,
-                        limits: GroundingLimits) -> AiResponse:
-    if guard_presentation(proposal, manifest):
-        raise ValueError("statement_manifest_mismatch")
-    separator = "\n" if proposal.layout == "compact" else "\n\n"
-    blocks = list(manifest.blocks)
-    opening = _OPENINGS[manifest.language][proposal.opening]
-    if opening:
-        blocks.insert(0, opening)
-    reply = separator.join(blocks)
-    if len(reply) > limits.max_reply_characters:
-        raise ValueError("reply_limit")
-    return AiResponse(intent=plan.intent, reply=reply, requiresReview=plan.requires_review, orderCandidate=None)
-
-
 def deterministic_fallback(plan: EvidencePlan, limits: GroundingLimits) -> AiResponse:
     try:
         validate_plan(plan)
@@ -171,3 +130,47 @@ def deterministic_fallback(plan: EvidencePlan, limits: GroundingLimits) -> AiRes
                       reply="مش قادر أتحقق من المعلومات الحالية. ممكن توضح طلبك؟" if ar else
                             "Current information could not be verified. Please clarify your request.",
                       requiresReview=bool(getattr(plan, "requires_review", False)), orderCandidate=None)
+
+
+_FORBIDDEN_ACTION_CLAIMS = ('هراجع مع الفريق', 'هسأل الفريق', 'هبلغ الفريق', 'هتواصل مع الفريق', 'هراجع مع صاحب', 'هتابعه', 'تم قبول', 'اتقبل طلبك', 'تم تأكيد طلبك', 'طلبك اتأكد', 'طلبك اتسجل', 'تم تسجيل طلبك', 'تم الحجز', 'تم استلام طلبك', 'order has been accepted', 'order is confirmed', 'order confirmed', 'order has been placed', 'accepted your order', 'your order is placed', 'check with the team', "i'll check with", 'i will check with', 'will follow up', 'تم إلغاء طلبك', 'تم الغاء طلبك', 'طلبك اتلغى', 'تم تعديل طلبك', 'تم رد', 'هنرجعلك فلوسك', 'هيتم استرداد', 'تم تحويل شكواك', 'هبلغ صاحب المحل', 'هوصل شكواك', 'تم ابلاغ صاحب', 'order has been cancelled', 'order has been canceled', 'your order is cancelled', 'your order was cancelled', 'has been modified', 'has been changed', 'refund has been', 'we will refund', 'will be refunded', 'i will notify the owner', "i'll tell the owner", 'i have passed', "i've passed")
+
+
+def validate_final_response(plan: EvidencePlan, response: AiResponse) -> bool:
+    """Authoritative output gate for both Groq composition and Python fallback.
+
+    Reconstruct the permitted grammar from verified facts, independently of the
+    composer. Every fact stays in order, once, with every required qualifier.
+    Model/provider diagnostics and the proposed reply confer no authority.
+    """
+    try:
+        validate_plan(plan)
+        response = AiResponse.model_validate(response.model_dump(mode="json"))
+        if (response.intent != plan.intent or response.requiresReview != plan.requires_review
+                or response.orderCandidate is not None or not response.reply.strip()
+                or len(response.reply) > 20000):
+            return False
+        from ..nlu import normalize
+        normalized = normalize(response.reply)
+        # Match the start of an action phrase, not a suffix inside an unrelated
+        # Arabic word (e.g. "خاتم رديوم" contains the bytes "تم رد"). Keep
+        # suffix matching so action inflections remain blocked. The independent
+        # closed-fact grammar below still rejects every free-prose addition.
+        if any(re.search(r"(?<!\w)" + re.escape(normalize(claim)), normalized)
+               for claim in _FORBIDDEN_ACTION_CLAIMS):
+            return False
+        # Lazy import prevents a module cycle: the grammar compiler validates
+        # plans through this module, but does not authorize final responses.
+        from ..chat.natural import clauses_for
+        clauses, questions = clauses_for(plan)
+        if not clauses:
+            return response.reply == deterministic_fallback(plan, GroundingLimits()).reply
+        joins = (" w ", "; ", ". ") if plan.reply_script == "franco" else (
+            ("، و", "؛ ", ". ") if plan.language == "ar" else (", and ", "; ", ". "))
+        separator = "(?:" + "|".join(re.escape(j) for j in joins) + ")"
+        facts = separator.join(re.escape(c.text) for c in clauses)
+        warmth = "tamam, " if plan.reply_script == "franco" else "تمام، " if plan.language == "ar" else "Sure, "
+        prefix = "(?:" + re.escape(warmth) + ")?" if not plan.comparison else ""
+        endings = [". " + " ".join(q[i] for q in questions) for i in (0,1)] if questions else [""]
+        return any(re.fullmatch(prefix + facts + re.escape(end), response.reply) is not None for end in endings)
+    except (ValueError, TypeError, AttributeError, KeyError):
+        return False

@@ -8,14 +8,14 @@ import httpx
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 
-class GeminiJSONModel(BaseModel):
-    """Use SDK response_json_schema, not the older OpenAPI Schema converter."""
+class StructuredJSONModel(BaseModel):
+    """Closed structured inference output; validated locally."""
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
-    __gemini_json_schema__: ClassVar[bool] = True
+    __structured_json_schema__: ClassVar[bool] = True
 
 
 def wire_json_schema(schema):
-    """Documented Gemini JSON Schema subset; Pydantic retains every local limit.
+    """Provider JSON Schema subset; Pydantic retains every local limit.
 
     maxLength/maxProperties are local validation constraints, not among the
     SDK's documented response_json_schema keywords. Do not send unknown keys.

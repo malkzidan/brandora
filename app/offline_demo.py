@@ -23,7 +23,6 @@ from .config import Settings
 from .http import create_app
 from .chat.synthetic import SyntheticBackend,identifier
 from .providers.groq import GroqClient
-from .providers.failover import ProviderChain
 
 
 class OfflineHarness:
@@ -45,11 +44,11 @@ class OfflineHarness:
         self.history_patch=None
         self.history_chunk_size=20
         self.history_delay=0
-        self.settings=Settings(**{**dict(ai_provider="rules",ai_service_token="offline-inbound-not-a-real-credential",
+        self.settings=Settings(**{**dict(ai_provider="groq",ai_service_token="offline-inbound-not-a-real-credential",
             backend_service_token="offline-outbound-not-a-real-credential",backend_context_public_key=public,
             backend_base_url="https://synthetic.invalid",ai_integration_enabled=True,
-            products_integration_enabled=True,groq_api_key="offline-model-not-a-real-key"),**settings_patch})
-        chain=ProviderChain([("groq",GroqClient(self.settings,transport=httpx.MockTransport(self._model)))],self.settings)
+            products_integration_enabled=False,groq_api_key="offline-model-not-a-real-key"),**settings_patch})
+        chain=GroqClient(self.settings,transport=httpx.MockTransport(self._model))
         self.app=create_app(self.settings,products_transport=httpx.MockTransport(self._backend),products_model_client=chain)
 
     async def _backend(self,request):
@@ -159,7 +158,7 @@ class OfflineHarness:
         now=int(time.time())
         claims={"iss":"brandora-backend","aud":"brandora-ai-tools-v1","scope":"products:read conversations:read",
             **{k:body[k] for k in ("businessId","customerId","conversationId","messageId")},
-            "iat":now,"exp":now+120,"requestHash":hashlib.sha256(raw).hexdigest(),**claims_patch}
+            "iat":now,"exp":now+60,"requestHash":hashlib.sha256(raw).hexdigest(),**claims_patch}
         token=jwt.encode(self.signer,claims).decode()
         return raw,{"X-Internal-Token":self.settings.ai_service_token,"X-AI-Context":token,"Content-Type":"application/json"}
 

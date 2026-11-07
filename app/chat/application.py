@@ -13,6 +13,8 @@ from ..pipeline.price_comparison import compare_verified_pair
 from ..schemas.backend import InventoryState
 from ..schemas.backend import ExpectedScope
 from .understanding import ConversationInterpreter, Selection, Understood, declines_selection, asks_stock_quantity
+from ..pipeline.extensions import (OrderDraft, OrderState, draft_from_plan,
+                                   confirm_draft, is_order_confirmation)
 
 
 @dataclass(frozen=True)
@@ -30,7 +32,7 @@ class ChatTurn:
         return {"intent": self.response.intent.value, "understanding": self.understanding.source,
                 "understandingProvider": self.understanding.source.split("_")[0],
                 "replyProvider": (e.diagnostics.generation_source.split("_")[0]
-                                  if e.diagnostics.generation_source in {"gemini_conversation","groq_conversation","openrouter_conversation"} else "deterministic"),
+                                  if e.diagnostics.generation_source in {"groq_conversation"} else "deterministic"),
                 "tools": self.tools, "candidates": [p.name for p in e.retrieval.candidates],
                 "matchingVariants": [str(v) for v in e.plan.matching_variant_ids],
                 "selectedVariant": str(e.plan.selected_variant_id) if e.plan.selected_variant_id else None,
@@ -57,26 +59,73 @@ class ChatSession:
     historical assistant prose, prices or stock are used to prepare a follow-up.
     """
     def __init__(self, data, scope: ExpectedScope, interpreter: ConversationInterpreter, responder, *,
-                 initial_selection=None,repeat_current_price=False):
+                 initial_selection=None,repeat_current_price=False,initial_order=None,initial_order_query=None):
         self.scope, self.interpreter = scope, interpreter
         self._data, self._responder = data, responder
         self.selection = initial_selection or Selection()
         self._repeat_current_price=repeat_current_price
+        if initial_order is not None and initial_order.scope and initial_order.scope != tuple(
+                str(v) for v in (scope.business_id,scope.customer_id,scope.conversation_id)):
+            raise ValueError('Order scope mismatch')
+        self.order_draft=initial_order or OrderDraft()
+        self.order_query=initial_order_query
         self._lock = asyncio.Lock()
 
     async def reset(self):
         async with self._lock:
             self.selection = Selection()
+            self.order_draft=OrderDraft()
+            self.order_query=None
 
     async def send(self, text: str, *, context_token: str, message_id=None,prepared_understanding=None) -> ChatTurn:
         async with self._lock:
             understood = prepared_understanding or await self.interpreter.understand(text, self.selection)
+            confirmation=is_order_confirmation(text)
+            if (confirmation and prepared_understanding is None and self.order_query is not None
+                    and self.order_draft.state==OrderState.AWAITING_CONFIRMATION):
+                # The saved query contains selectors only. The normal pipeline
+                # fetches fresh Product/Variant evidence under this turn's token.
+                understood=self.order_query
             pipeline = StandalonePipeline(self._data, self._responder, planner=ConversationPlanner(
                 understood,self.selection,repeat_current_price=self._repeat_current_price,
+                order_confirmation=confirmation,
                 allow_stock_quantity_disclosure=(asks_stock_quantity(text) and
                     str(self.scope.business_id) in self.interpreter.settings.stock_quantity_disclosure_businesses)))
             execution = await pipeline.execute(understood.inquiry, scope=self.scope,
                 message_id=message_id or uuid4(), context_token=context_token, prepare_history=False)
+            if declines_selection(text):
+                self.order_draft=OrderDraft(state=OrderState.CANCELLED,reason='local_draft_cancelled')
+                self.order_query=None
+            elif execution.retrieval.failure is not None or prepared_understanding is not None:
+                self.order_draft=OrderDraft(state=OrderState.BLOCKED,reason='evidence_unavailable')
+                self.order_query=None
+            elif execution.plan.intent==E03Intent.PURCHASE_INTENT:
+                fresh=draft_from_plan(execution.plan,self.scope,execution.binding.message_id)
+                self.order_draft=confirm_draft(self.order_draft,fresh,execution.binding.message_id) if confirmation else fresh
+                self.order_query=understood
+            elif (self.order_draft.state in {OrderState.DRAFT,OrderState.AWAITING_CONFIRMATION}
+                  and understood.meaning.act in {'price','product'} and not execution.plan.requires_review
+                  and len(execution.plan.products)==1
+                  and str(execution.plan.products[0].product_id)==self.order_draft.product_id):
+                # An inquiry about the same product is not abandonment. Refresh
+                # the draft (including corrected options) without turning this
+                # inquiry's response into a new purchase or confirmation.
+                fresh=draft_from_plan(replace(execution.plan,requested_quantity=self.order_draft.quantity),
+                                      self.scope,execution.binding.message_id)
+                self.order_draft=fresh
+                self.order_query=replace(understood,
+                    meaning=understood.meaning.model_copy(update={'act':'purchase','quantity':fresh.quantity}),
+                    inquiry=understood.inquiry.model_copy(update={
+                        'text':f'I want to buy product quantity {fresh.quantity}' if fresh.quantity is not None else 'I want to buy product',
+                        'product_ids':(execution.plan.products[0].product_id,)}))
+            elif confirmation:
+                self.order_draft=OrderDraft(state=OrderState.BLOCKED,reason='no_confirmable_draft')
+                self.order_query=None
+            elif execution.retrieval.candidates or understood.meaning.act!='other' or execution.plan.requires_review:
+                # Inquiry/product switches invalidate an earlier confirmation.
+                self.order_draft=OrderDraft()
+                self.order_query=None
+            execution=replace(execution,order_extension=replace(execution.order_extension,draft=self.order_draft))
             # Intent, language and quantity are semantic customer requests, not
             # Backend facts. Keep the planner's safety decisions authoritative.
             # Quantity extraction from canonical text is checked by regression tests.
@@ -90,7 +139,11 @@ class ChatSession:
                                               understood.inquiry.option_values).values
                 alternatives=(tuple((key,tuple(values)) for key,values in understood.inquiry.option_alternatives.items())
                               if understood.meaning.act=="compare" else ())
-                self.selection = Selection(products, options, understood.meaning.quantity,alternatives)
+                quantity=understood.meaning.quantity
+                if (self.order_draft.state in {OrderState.DRAFT,OrderState.AWAITING_CONFIRMATION}
+                        and len(products)==1 and str(products[0].id)==self.order_draft.product_id):
+                    quantity=self.order_draft.quantity
+                self.selection = Selection(products, options, quantity,alternatives)
             elif understood.meaning.act != "other":
                 self.selection = Selection()
             elif declines_selection(text):
@@ -106,11 +159,12 @@ class ChatSession:
 
 class ConversationPlanner(EvidencePlanner):
     """Per-turn language/quantity from interpretation, facts from the base planner."""
-    def __init__(self, understood, previous=None, *, repeat_current_price=False,allow_stock_quantity_disclosure=False):
+    def __init__(self, understood, previous=None, *, repeat_current_price=False,allow_stock_quantity_disclosure=False,order_confirmation=False):
         self._meaning = understood.meaning
         self._previous = previous or Selection()
         self._repeat_current_price=repeat_current_price
         self._allow_stock_quantity_disclosure=allow_stock_quantity_disclosure
+        self._order_confirmation=order_confirmation
 
     def plan(self, inquiry, result, history=None):
         plan = super().plan(inquiry, result, history)
@@ -122,6 +176,12 @@ class ConversationPlanner(EvidencePlanner):
                            requested_quantity=None, statements=(GroundedStatement("hard_rule", reply,
                                (EvidenceSource("deterministic_template", None, "read_only_safety"),)),))
         if self._meaning.act == "other":
+            if self._order_confirmation:
+                notice=('مفيش مسودة مكتملة للتأكيد، وإنشاء الطلبات مش متاح حاليًا. ممكن تحدد المنتج والمقاس والكمية؟'
+                        if plan.language=='ar' else 'There is no complete draft to confirm. Order submission is unavailable. Which product, variant and quantity?')
+                return replace(plan,resolution=Resolution.SIMPLE_RESPONSE,requires_clarification=False,
+                               statements=(GroundedStatement('order_policy',notice,
+                                (EvidenceSource('deterministic_template',None,'read_only_safety'),)),))
             return plan
         plan = replace(plan, language=self._meaning.language, requested_quantity=self._meaning.quantity,
                        allow_stock_quantity_disclosure=self._allow_stock_quantity_disclosure,
@@ -158,4 +218,19 @@ class ConversationPlanner(EvidencePlanner):
                     and variant.recorded_quantity is not None and plan.requested_quantity is not None
                     and plan.requested_quantity>variant.recorded_quantity):
                 plan=replace(plan,requires_review=True,review_reason=ReviewReason.OUT_OF_STOCK_RISK)
+        if self._order_confirmation:
+            notice=('إنشاء الطلبات مش متاح حاليًا؛ مفيش طلب اتعمل ولا حجز مخزون أو دفع.'
+                    if plan.language=='ar' else
+                    'Order submission is unavailable. No order, inventory reservation or payment was made.')
+            plan=replace(plan,statements=plan.statements+(GroundedStatement('order_policy',notice,
+                (EvidenceSource('deterministic_template',None,'read_only_safety'),)),))
+        elif (plan.intent==E03Intent.PURCHASE_INTENT and not plan.requires_review
+              and len(plan.products)==len(matches)==1 and plan.requested_quantity is not None
+              and not plan.missing_facts and not plan.ambiguities
+              and matches[0].effective_price is not None and matches[0].recorded_quantity is not None
+              and 0<plan.requested_quantity<=matches[0].recorded_quantity):
+            notice=('دي مسودة اختيار بس، مش طلب منفذ. لو موافق على الاختيار قول «أكد الطلب»؛ إنشاء الطلبات لسه غير متاح.'
+                    if plan.language=='ar' else 'This is a selection draft only. Say "confirm order" to confirm the selection; order submission remains unavailable.')
+            plan=replace(plan,statements=plan.statements+(GroundedStatement('order_policy',notice,
+                (EvidenceSource('deterministic_template',None,'read_only_safety'),)),))
         return plan

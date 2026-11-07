@@ -15,3 +15,18 @@ __pycache__/
 # Private local/staging configuration; retain the public template.
 .env.*
 !.env.example
+
+# Local review outputs; keep only reusable contract schemas/source hashes.
+/docs/verification/*
+!/docs/verification/contract-schemas.json
+!/docs/verification/workflow-backend-sources.json
+/docs/CONSOLIDATION_REPORT.md
+/docs/CONSOLIDATION_AUDIT.md
+/workflow-baseline.txt
+/workflow-focused.txt
+node_modules/
+*.sqlite
+*.sqlite3
+*.db
+*.pem
+*.key

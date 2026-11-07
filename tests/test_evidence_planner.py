@@ -333,14 +333,14 @@ def test_simple_customer_service_remains_deterministic_and_read_only(text, expec
     assert plan.to_response().orderCandidate is None
 
 
-def test_planner_never_calls_data_access_or_gemini(monkeypatch):
+def test_planner_never_calls_data_access_or_groq(monkeypatch):
     from app.data.backend import BackendDataAccess
-    from app.providers.gemini import GeminiClient
+    from app.providers.groq import GroqClient
     def forbidden(*args, **kwargs):
         pytest.fail("Planner must not execute tools or Gemini")
     for name in ("get_products", "get_product_details", "get_product_variants", "get_variant_details", "get_business_info", "get_conversation_history"):
         monkeypatch.setattr(BackendDataAccess, name, forbidden)
-    monkeypatch.setattr(GeminiClient, "call", forbidden)
+    monkeypatch.setattr(GroqClient, "call", forbidden)
     plan = EvidencePlanner().plan(inquiry(color="Black", size="M"), evidence())
     assert plan.variants[0].effective_price == Decimal("250.00")
 

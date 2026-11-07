@@ -1,0 +1,19 @@
+{
+  "commit": "f7c826fc76bc0ab8569ae0ed25106ff19bdaae45",
+  "files": {
+    "src/ai/ai.controller.ts": "9979ec67728bb5948251403600242372b202a527",
+    "src/ai/ai.service.ts": "729ff3f41954a7107dc169dd8f115da6145cf62c",
+    "src/ai/ai.module.ts": "f704c8f5f5f2ad09566b1dfdf0a3fc09961bd3b0",
+    "src/ai/ai-security.ts": "f0f063ed616dcefd33bf24bdfdcd49f071e39213",
+    "src/ai/ai-internal.guard.ts": "0e1010a15c3d5348b904082298f83d14e1f38522",
+    "src/ai/ai-conversation.store.ts": "e65255dbee33d62daff6c681d8d9b01bc6310299",
+    "src/ai/ai.dto.ts": "440f8a2cf63cb0fa1c53dc9b71e28e9729230016",
+    "src/ai/ai-response.ts": "06586cae86f47c9eed5db32471df5639a19da8b1",
+    "src/auth/auth.guard.ts": "fb1d210dc20320a38e3500744462b2d7138c8fa0",
+    "src/auth/auth-policy.ts": "ee82a8939e75ed857117aa63bdff73ac8228f1f2",
+    "src/common/errors/app-http.exception.ts": "d0eea527636087977251bf9df7f656fb05855264",
+    "src/common/errors/error-code.ts": "0b7624853f10d4ebc7b6747c9cec2bede2878981",
+    "src/common/pagination/pagination.ts": "230ed8d54bc9d59957ce00df704825fcb3876ddf",
+    "src/products/product-presenter.ts": "cd837e5c9706c87f23fabdb91bdb5c9e46166b4b"
+  }
+}

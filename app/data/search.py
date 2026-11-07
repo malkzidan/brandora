@@ -13,7 +13,7 @@ products product show catalog catalogue قصدي اقصد المقصود قار�
 انهي ايهما واحد ارخص اغلي اوفر افضل احسن بس مش عارف عارفه السعر فرق الفرق
 compare comparison cheaper cheapest expensive less more difference versus vs better prefer
 torn between about actually please tell goes both الاتنين طب رايي غيرت بدل
-quantity كميه pale
+quantity كميه pale وريني
 ana me7tar ben wel anhi a7san arkhas ar5as far2 se3r
 3andkom عندكوا 3ayez 3ayza bekam etneen meno
 """).split())

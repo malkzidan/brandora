@@ -31,7 +31,7 @@ def groq_schema(schema):
 
 
 class GroqClient:
-    """One HTTP attempt per model; higher-level failover owns the total budget."""
+    """One bounded HTTP attempt per model, with model cooldown and a total stage budget."""
     provider_name = "groq"
     endpoint = "https://api.groq.com/openai/v1/chat/completions"
 
@@ -68,9 +68,19 @@ class GroqClient:
             try:
                 async with httpx.AsyncClient(transport=self._transport, trust_env=False, follow_redirects=False,
                         timeout=self.settings.chat_provider_timeout_seconds) as client:
-                    response = await asyncio.wait_for(client.post(self.endpoint,
-                        headers={"Authorization": "Bearer " + self.api_key},
-                        json=self.request_body(model,system,user,schema,temperature)),timeout=remaining)
+                    async def bounded_response():
+                        async with client.stream("POST",self.endpoint,
+                                headers={"Authorization":"Bearer "+self.api_key},
+                                json=self.request_body(model,system,user,schema,temperature)) as stream:
+                            chunks=[]
+                            size=0
+                            async for chunk in stream.aiter_bytes():
+                                size+=len(chunk)
+                                if size>262144:
+                                    raise ValueError("Provider payload limit")
+                                chunks.append(chunk)
+                            return httpx.Response(stream.status_code,content=b"".join(chunks))
+                    response=await asyncio.wait_for(bounded_response(),timeout=remaining)
                 code = response.status_code
                 if code != 200:
                     category = ("authentication" if code == 401 else "permission_denied" if code == 403 else

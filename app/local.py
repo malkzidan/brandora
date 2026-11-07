@@ -30,7 +30,7 @@ def create_local_application():
         raise ValueError("Groq mode requires a privately configured GROQ_API_KEY")
     from .http import create_app
     app = create_app(replace(
-        settings, ai_provider="rules", legacy_api_enabled=False, enable_dev_endpoints=False,
+        settings, ai_provider=mode, legacy_api_enabled=False, enable_dev_endpoints=False,
         products_integration_enabled=False, supplied_context_compat_enabled=False,
         groq_api_key=settings.groq_api_key if mode == "groq" else None,
     ))

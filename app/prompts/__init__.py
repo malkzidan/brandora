@@ -1,1 +1,1 @@
-from .templates import CLARIFICATION_MARKERS, CONFIRM_MARKERS, DAYS, STATUS, TEMPLATES, WEEK_ORDER, t  # noqa: F401
+"""Deterministic customer wording; structured inference prompts live at their call sites."""

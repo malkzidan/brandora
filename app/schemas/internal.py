@@ -1,13 +1,12 @@
 """Internal (not part of the HTTP contract): the Router's structured output and the planner's decision."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from enum import Enum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .response import E03Intent, OrderCandidate, ReviewReason
+from .response import E03Intent
 
 Language = Literal["ar", "en"]
 
@@ -40,7 +39,7 @@ class Intent(str, Enum):
 
 
 # DEPRECATED alias for old code/tests: Intent.FOLLOW_UP is Intent.ORDER_STATUS. It is a plain class attribute (not an Enum
-# alias member), so it never appears in iteration or in the JSON schema sent to Gemini.
+# alias member), so it never appears in iteration or in the JSON schema used by structured inference.
 Intent.FOLLOW_UP = Intent.ORDER_STATUS  # type: ignore[attr-defined]
 
 # Intents the owner must see immediately: the response carries requiresReview=true.
@@ -63,7 +62,7 @@ class Confirmation(str, Enum):
 
 
 class RouterResult(BaseModel):
-    """Strict JSON the Router returns (also used as Gemini's response_schema)."""
+    """Deterministic classifier result used by shared routing policy."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -93,7 +92,7 @@ INTENT_TO_E03 = {
     Intent.ORDER_STATUS: E03Intent.INQUIRY,
     Intent.HELP: E03Intent.INQUIRY,
     Intent.RETURNS_POLICY: E03Intent.INQUIRY,
-    Intent.CREATE_ORDER: E03Intent.PURCHASE_INTENT,   # becomes CONFIRMED_ORDER only on explicit customer confirmation
+    Intent.CREATE_ORDER: E03Intent.PURCHASE_INTENT,   # provisional intent only; no order creation
     Intent.GREETING: E03Intent.OTHER,
     Intent.THANKYOU: E03Intent.OTHER,
     Intent.COMPLAINT: E03Intent.OTHER,
@@ -104,26 +103,3 @@ INTENT_TO_E03 = {
     Intent.LEGAL_THREAT: E03Intent.OTHER,
     Intent.CUSTOM_REQUEST: E03Intent.OTHER,
 }
-
-
-@dataclass
-class Plan:
-    """What the pipeline decided to say. `reply` is the verified, template-built draft."""
-
-    detailed_intent: Intent
-    reply: str
-    grounded: bool = False              # True -> the Generator may rewrite `reply` (guarded); False -> fixed template
-    secondary: list[Intent] = field(default_factory=list)
-    confidence: float = 0.0
-    candidate: OrderCandidate | None = None
-    review_reasons: list[ReviewReason] = field(default_factory=list)
-    clarification: bool = False
-    awaiting_confirmation: bool = False
-    owner_review: bool = False          # flag the response (requiresReview=true) so the owner sees it right away
-    protected_terms: list[str] = field(default_factory=list)   # product names the rewrite must keep verbatim
-
-    @property
-    def e03_intent(self) -> E03Intent:
-        if self.candidate is not None:
-            return E03Intent.CONFIRMED_ORDER
-        return INTENT_TO_E03[self.detailed_intent]

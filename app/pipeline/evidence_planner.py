@@ -1,7 +1,7 @@
 """Standalone read-only planning from scoped Backend evidence. No tool execution.
 
-Draft statements are deterministic material for later generation/guarding, not a
-new live response path. Legacy Planner, Guard and v1 behavior remain unchanged.
+Draft statements are deterministic material validated by the canonical composer
+and final evidence guard.
 """
 from dataclasses import dataclass, field
 from decimal import Decimal

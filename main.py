@@ -1,4 +1,3 @@
-"""Legacy-compatible ASGI import. Railway uses python -m app.server."""
+"""ASGI compatibility import of the canonical application factory."""
 from app.http import create_app
-
 app = create_app()

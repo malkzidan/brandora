@@ -1,0 +1,874 @@
+{
+  "ConversationRequest": {
+    "additionalProperties": false,
+    "properties": {
+      "businessId": {
+        "format": "uuid",
+        "title": "Businessid",
+        "type": "string"
+      },
+      "customerId": {
+        "format": "uuid",
+        "title": "Customerid",
+        "type": "string"
+      },
+      "conversationId": {
+        "format": "uuid",
+        "title": "Conversationid",
+        "type": "string"
+      },
+      "messageId": {
+        "format": "uuid",
+        "title": "Messageid",
+        "type": "string"
+      },
+      "message": {
+        "maxLength": 2000,
+        "minLength": 1,
+        "title": "Message",
+        "type": "string"
+      }
+    },
+    "required": [
+      "businessId",
+      "customerId",
+      "conversationId",
+      "messageId",
+      "message"
+    ],
+    "title": "ConversationRequest",
+    "type": "object"
+  },
+  "ConversationClaims": {
+    "additionalProperties": false,
+    "properties": {
+      "iss": {
+        "const": "brandora-backend",
+        "title": "Iss",
+        "type": "string"
+      },
+      "aud": {
+        "const": "brandora-ai-tools-v1",
+        "title": "Aud",
+        "type": "string"
+      },
+      "scope": {
+        "const": "products:read conversations:read",
+        "title": "Scope",
+        "type": "string"
+      },
+      "businessId": {
+        "format": "uuid",
+        "title": "Businessid",
+        "type": "string"
+      },
+      "customerId": {
+        "format": "uuid",
+        "title": "Customerid",
+        "type": "string"
+      },
+      "conversationId": {
+        "format": "uuid",
+        "title": "Conversationid",
+        "type": "string"
+      },
+      "messageId": {
+        "format": "uuid",
+        "title": "Messageid",
+        "type": "string"
+      },
+      "requestHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "title": "Requesthash",
+        "type": "string"
+      },
+      "iat": {
+        "title": "Iat",
+        "type": "integer"
+      },
+      "exp": {
+        "title": "Exp",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "iss",
+      "aud",
+      "scope",
+      "businessId",
+      "customerId",
+      "conversationId",
+      "messageId",
+      "requestHash",
+      "iat",
+      "exp"
+    ],
+    "title": "ConversationClaims",
+    "type": "object"
+  },
+  "CanonicalResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "intent": {
+        "enum": [
+          "INQUIRY",
+          "PURCHASE_INTENT",
+          "OTHER"
+        ],
+        "title": "Intent",
+        "type": "string"
+      },
+      "reply": {
+        "minLength": 1,
+        "title": "Reply",
+        "type": "string"
+      },
+      "requiresReview": {
+        "title": "Requiresreview",
+        "type": "boolean"
+      },
+      "orderCandidate": {
+        "title": "Ordercandidate",
+        "type": "null"
+      }
+    },
+    "required": [
+      "intent",
+      "reply",
+      "requiresReview",
+      "orderCandidate"
+    ],
+    "title": "CanonicalResponse",
+    "type": "object"
+  },
+  "Product": {
+    "$defs": {
+      "JsonValue": {},
+      "Pagination": {
+        "properties": {
+          "limit": {
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "totalCount": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "title": "Totalcount",
+            "type": "integer"
+          },
+          "hasMore": {
+            "title": "Hasmore",
+            "type": "boolean"
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextoffset"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "totalCount",
+          "hasMore",
+          "nextOffset"
+        ],
+        "title": "Pagination",
+        "type": "object"
+      },
+      "ProductImage": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "productId": {
+            "format": "uuid",
+            "title": "Productid",
+            "type": "string"
+          },
+          "secureUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secureurl"
+          },
+          "position": {
+            "maximum": 4,
+            "minimum": 0,
+            "title": "Position",
+            "type": "integer"
+          },
+          "isMain": {
+            "title": "Ismain",
+            "type": "boolean"
+          },
+          "optionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Optionname"
+          },
+          "optionValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Optionvalue"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "bytes": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bytes"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Format"
+          }
+        },
+        "required": [
+          "id",
+          "productId",
+          "secureUrl",
+          "position",
+          "isMain",
+          "optionName",
+          "optionValue",
+          "width",
+          "height",
+          "bytes",
+          "format"
+        ],
+        "title": "ProductImage",
+        "type": "object"
+      },
+      "ProductVariant": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "businessId": {
+            "format": "uuid",
+            "title": "Businessid",
+            "type": "string"
+          },
+          "catalogItemId": {
+            "format": "uuid",
+            "title": "Catalogitemid",
+            "type": "string"
+          },
+          "sku": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sku"
+          },
+          "optionValues": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Optionvalues",
+            "type": "object"
+          },
+          "unitPrice": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unitprice"
+          },
+          "effectivePrice": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effectiveprice"
+          },
+          "trackInventory": {
+            "title": "Trackinventory",
+            "type": "boolean"
+          },
+          "stockQuantity": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stockquantity"
+          },
+          "isActive": {
+            "title": "Isactive",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "businessId",
+          "catalogItemId",
+          "optionValues",
+          "unitPrice",
+          "effectivePrice",
+          "trackInventory",
+          "stockQuantity",
+          "isActive"
+        ],
+        "title": "ProductVariant",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "id": {
+        "format": "uuid",
+        "title": "Id",
+        "type": "string"
+      },
+      "businessId": {
+        "format": "uuid",
+        "title": "Businessid",
+        "type": "string"
+      },
+      "name": {
+        "minLength": 1,
+        "title": "Name",
+        "type": "string"
+      },
+      "description": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Description"
+      },
+      "basePrice": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Baseprice"
+      },
+      "options": {
+        "additionalProperties": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": "Options",
+        "type": "object"
+      },
+      "attributes": {
+        "anyOf": [
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/JsonValue"
+            },
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Attributes"
+      },
+      "isActive": {
+        "title": "Isactive",
+        "type": "boolean"
+      },
+      "isSellable": {
+        "title": "Issellable",
+        "type": "boolean"
+      },
+      "variants": {
+        "items": {
+          "$ref": "#/$defs/ProductVariant"
+        },
+        "title": "Variants",
+        "type": "array"
+      },
+      "variantsPagination": {
+        "$ref": "#/$defs/Pagination"
+      },
+      "categoryId": {
+        "anyOf": [
+          {
+            "format": "uuid",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Categoryid"
+      },
+      "externalKey": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Externalkey"
+      },
+      "category": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Category"
+      },
+      "colorOptionName": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Coloroptionname"
+      },
+      "images": {
+        "items": {
+          "$ref": "#/$defs/ProductImage"
+        },
+        "maxItems": 5,
+        "title": "Images",
+        "type": "array"
+      }
+    },
+    "required": [
+      "id",
+      "businessId",
+      "name",
+      "description",
+      "basePrice",
+      "options",
+      "attributes",
+      "isActive",
+      "isSellable",
+      "variants",
+      "variantsPagination"
+    ],
+    "title": "Product",
+    "type": "object"
+  },
+  "ProductVariant": {
+    "properties": {
+      "id": {
+        "format": "uuid",
+        "title": "Id",
+        "type": "string"
+      },
+      "businessId": {
+        "format": "uuid",
+        "title": "Businessid",
+        "type": "string"
+      },
+      "catalogItemId": {
+        "format": "uuid",
+        "title": "Catalogitemid",
+        "type": "string"
+      },
+      "sku": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Sku"
+      },
+      "optionValues": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "title": "Optionvalues",
+        "type": "object"
+      },
+      "unitPrice": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Unitprice"
+      },
+      "effectivePrice": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Effectiveprice"
+      },
+      "trackInventory": {
+        "title": "Trackinventory",
+        "type": "boolean"
+      },
+      "stockQuantity": {
+        "anyOf": [
+          {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Stockquantity"
+      },
+      "isActive": {
+        "title": "Isactive",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "id",
+      "businessId",
+      "catalogItemId",
+      "optionValues",
+      "unitPrice",
+      "effectivePrice",
+      "trackInventory",
+      "stockQuantity",
+      "isActive"
+    ],
+    "title": "ProductVariant",
+    "type": "object"
+  },
+  "AuthorizedHistoryPage": {
+    "$defs": {
+      "Pagination": {
+        "properties": {
+          "limit": {
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "totalCount": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "title": "Totalcount",
+            "type": "integer"
+          },
+          "hasMore": {
+            "title": "Hasmore",
+            "type": "boolean"
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextoffset"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "totalCount",
+          "hasMore",
+          "nextOffset"
+        ],
+        "title": "Pagination",
+        "type": "object"
+      },
+      "ScopedHistoryMessage": {
+        "additionalProperties": false,
+        "description": "PR message DTO plus mandatory identity/type/time for secure reconstruction.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "conversationId": {
+            "format": "uuid",
+            "title": "Conversationid",
+            "type": "string"
+          },
+          "senderType": {
+            "enum": [
+              "CUSTOMER",
+              "AI",
+              "OWNER"
+            ],
+            "title": "Sendertype",
+            "type": "string"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "messageType": {
+            "enum": [
+              "TEXT",
+              "IMAGE",
+              "AUDIO",
+              "VIDEO",
+              "DOCUMENT",
+              "LOCATION",
+              "OTHER"
+            ],
+            "title": "Messagetype",
+            "type": "string"
+          },
+          "createdAt": {
+            "maxLength": 40,
+            "title": "Createdat",
+            "type": "string"
+          },
+          "externalMessageId": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Externalmessageid"
+          }
+        },
+        "required": [
+          "id",
+          "conversationId",
+          "senderType",
+          "content",
+          "messageType",
+          "createdAt"
+        ],
+        "title": "ScopedHistoryMessage",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "Proposed authenticated internal envelope; not the unauthenticated PR page.",
+    "properties": {
+      "businessId": {
+        "format": "uuid",
+        "title": "Businessid",
+        "type": "string"
+      },
+      "customerId": {
+        "format": "uuid",
+        "title": "Customerid",
+        "type": "string"
+      },
+      "conversationId": {
+        "format": "uuid",
+        "title": "Conversationid",
+        "type": "string"
+      },
+      "beforeMessageId": {
+        "format": "uuid",
+        "title": "Beforemessageid",
+        "type": "string"
+      },
+      "beforeMessageCreatedAt": {
+        "maxLength": 40,
+        "title": "Beforemessagecreatedat",
+        "type": "string"
+      },
+      "snapshot": {
+        "maxLength": 128,
+        "minLength": 1,
+        "title": "Snapshot",
+        "type": "string"
+      },
+      "order": {
+        "const": "createdAt_desc_id_desc",
+        "title": "Order",
+        "type": "string"
+      },
+      "complete": {
+        "title": "Complete",
+        "type": "boolean"
+      },
+      "pagination": {
+        "$ref": "#/$defs/Pagination"
+      },
+      "items": {
+        "items": {
+          "$ref": "#/$defs/ScopedHistoryMessage"
+        },
+        "maxItems": 100,
+        "title": "Items",
+        "type": "array"
+      }
+    },
+    "required": [
+      "businessId",
+      "customerId",
+      "conversationId",
+      "beforeMessageId",
+      "beforeMessageCreatedAt",
+      "snapshot",
+      "order",
+      "complete",
+      "pagination",
+      "items"
+    ],
+    "title": "AuthorizedHistoryPage",
+    "type": "object"
+  }
+}

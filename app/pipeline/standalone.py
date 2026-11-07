@@ -1,4 +1,4 @@
-"""Request-local assembly reused by offline chat and opt-in Products HTTP.
+"""Bounded execution assembly shared by canonical HTTP and offline testing.
 
 Caller-established scope/turn bindings are internal assertions, not signed-token
 verification. Credentials live only in this call's budgeted data-access wrapper.
@@ -271,6 +271,15 @@ class StandalonePipeline:
         if invalid_generation:
             generation = self._generator.fallback(plan, "invalid_generation_result")
             response = generation.response
+        from .evidence_guard import validate_final_response
+        if not validate_final_response(plan, response):
+            # The fallback comes from the canonical composer, never an injected
+            # generator that might have caused the rejection in the first place.
+            from ..chat.natural import NaturalResponder
+            generation = NaturalResponder().fallback(plan, "final_evidence_guard_rejected")
+            response = generation.response
+            if not validate_final_response(plan, response):
+                raise ValueError("Final evidence validation failed")
         diagnostics = ExecutionDiagnostics(
             data.calls, max(0, int((self._clock() - started) * 1000)), tuple(stages), stopped,
             tuple(dict.fromkeys(issues + data.issues + list(retrieved.issues))),

@@ -13,7 +13,7 @@ from ..schemas.backend import (
     ExpectedScope, Page, Product, ProductVariant,
     RetrievalOutcome, RetrievalStatus,
 )
-from ..schemas.request import CatalogItem
+from ..schemas.matching import MatchingProduct
 from ..schemas.inquiry import Inquiry as RetrievalQuery, VariantReference  # compatibility imports
 from .backend import BackendDataAccess
 from .history import PreparedHistory, is_contextual_followup
@@ -92,7 +92,7 @@ class _Stop(Exception):
 def _matches(text: str, products: list[Product]) -> list[Product]:
     # Reuse tested legacy token scoring. This projection is matching-only:
     # no price budget and no parent inventory are used to rank Backend evidence.
-    projections = [CatalogItem(id=p.id, name=p.name, attributes=p.attributes,
+    projections = [MatchingProduct(id=p.id, name=p.name, attributes=p.attributes,
                                isActive=p.isActive, basePrice=None, trackInventory=False)
                    for p in products]
     terms = extract_entities(canonical_search(text)).product_tokens

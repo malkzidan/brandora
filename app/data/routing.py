@@ -1,7 +1,7 @@
 """Shared current-turn routing for standalone retrieval and evidence planning.
 
 Reuse the legacy classifier; keep its existing standalone safety overrides in
-one place. This does not change the live RulesRouter or Gemini Router.
+one place. The same routing policy is used by the canonical engine and Python fallback.
 """
 import re
 
@@ -22,4 +22,11 @@ def route_current_inquiry(text: str) -> RouterResult:
         result.intents = [Intent.COMPLAINT]
     elif intent == Intent.UNKNOWN and normalized and normalized.split()[0] in {"3ayez", "3ayza", "3awz", "3andkom", "bekam"}:
         result.intents = [Intent.PRICE_INQUIRY if normalized.split()[0] == "bekam" else Intent.PRODUCT_INQUIRY]
+    elif intent == Intent.UNKNOWN and "وريني" in normalized.split():
+        from .search import search_terms
+        # Explicit discovery can name any business-defined product, not only
+        # nouns in the synonym dictionary. Retrieval still verifies every term;
+        # known complaints and service intents retain their higher precedence.
+        if search_terms(text):
+            result.intents = [Intent.PRODUCT_INQUIRY]
     return result

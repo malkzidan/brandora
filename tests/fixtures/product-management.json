@@ -1,0 +1,170 @@
+{
+  "provenance": {
+    "repository": "shrouqshaker/brandora-backend",
+    "branch": "feature/product-management",
+    "commit": "3f37c4c79f7caa5da99dc0f60f2e87f61e3d2b62",
+    "source": "src/products/product-presenter.ts + prisma/schema.prisma",
+    "kind": "synthetic values projected through inspected presenter fields; not captured live"
+  },
+  "product": {
+    "id": "00000004-0000-4000-8000-000000000010",
+    "businessId": "00000001-0000-4000-8000-000000000001",
+    "name": "تيشيرت قطن Cotton T-Shirt",
+    "description": "Synthetic demonstration product",
+    "basePrice": "200.00",
+    "options": {
+      "color": [
+        "Black",
+        "White",
+        "Blue"
+      ],
+      "size": [
+        "M",
+        "L"
+      ]
+    },
+    "attributes": {},
+    "isActive": true,
+    "isSellable": true,
+    "variants": [
+      {
+        "id": "00000005-0000-4000-8000-000000000100",
+        "businessId": "00000001-0000-4000-8000-000000000001",
+        "catalogItemId": "00000004-0000-4000-8000-000000000010",
+        "optionValues": {
+          "color": "Black",
+          "size": "M"
+        },
+        "unitPrice": "250.00",
+        "effectivePrice": "250.00",
+        "trackInventory": true,
+        "stockQuantity": 5,
+        "isActive": true,
+        "productId": "00000004-0000-4000-8000-000000000010",
+        "sku": "COTTON-0",
+        "createdAt": "2026-11-04T10:00:00.000Z",
+        "updatedAt": "2026-11-04T10:00:00.000Z"
+      },
+      {
+        "id": "00000005-0000-4000-8000-000000000101",
+        "businessId": "00000001-0000-4000-8000-000000000001",
+        "catalogItemId": "00000004-0000-4000-8000-000000000010",
+        "optionValues": {
+          "color": "Black",
+          "size": "L"
+        },
+        "unitPrice": "275.00",
+        "effectivePrice": "275.00",
+        "trackInventory": true,
+        "stockQuantity": 4,
+        "isActive": true,
+        "productId": "00000004-0000-4000-8000-000000000010",
+        "sku": "COTTON-1",
+        "createdAt": "2026-11-04T10:00:00.000Z",
+        "updatedAt": "2026-11-04T10:00:00.000Z"
+      },
+      {
+        "id": "00000005-0000-4000-8000-000000000102",
+        "businessId": "00000001-0000-4000-8000-000000000001",
+        "catalogItemId": "00000004-0000-4000-8000-000000000010",
+        "optionValues": {
+          "color": "White",
+          "size": "L"
+        },
+        "unitPrice": "285.00",
+        "effectivePrice": "285.00",
+        "trackInventory": true,
+        "stockQuantity": 8,
+        "isActive": true,
+        "productId": "00000004-0000-4000-8000-000000000010",
+        "sku": "COTTON-2",
+        "createdAt": "2026-11-04T10:00:00.000Z",
+        "updatedAt": "2026-11-04T10:00:00.000Z"
+      },
+      {
+        "id": "00000005-0000-4000-8000-000000000103",
+        "businessId": "00000001-0000-4000-8000-000000000001",
+        "catalogItemId": "00000004-0000-4000-8000-000000000010",
+        "optionValues": {
+          "color": "White",
+          "size": "M"
+        },
+        "unitPrice": "225.00",
+        "effectivePrice": "225.00",
+        "trackInventory": false,
+        "stockQuantity": null,
+        "isActive": true,
+        "productId": "00000004-0000-4000-8000-000000000010",
+        "sku": "COTTON-3",
+        "createdAt": "2026-11-04T10:00:00.000Z",
+        "updatedAt": "2026-11-04T10:00:00.000Z"
+      },
+      {
+        "id": "00000005-0000-4000-8000-000000000104",
+        "businessId": "00000001-0000-4000-8000-000000000001",
+        "catalogItemId": "00000004-0000-4000-8000-000000000010",
+        "optionValues": {
+          "color": "Blue",
+          "size": "M"
+        },
+        "unitPrice": "0.00",
+        "effectivePrice": "0.00",
+        "trackInventory": true,
+        "stockQuantity": 0,
+        "isActive": true,
+        "productId": "00000004-0000-4000-8000-000000000010",
+        "sku": "COTTON-4",
+        "createdAt": "2026-11-04T10:00:00.000Z",
+        "updatedAt": "2026-11-04T10:00:00.000Z"
+      },
+      {
+        "id": "00000005-0000-4000-8000-000000000105",
+        "businessId": "00000001-0000-4000-8000-000000000001",
+        "catalogItemId": "00000004-0000-4000-8000-000000000010",
+        "optionValues": {
+          "color": "Blue",
+          "size": "L"
+        },
+        "unitPrice": "205.00",
+        "effectivePrice": "205.00",
+        "trackInventory": true,
+        "stockQuantity": 9,
+        "isActive": false,
+        "productId": "00000004-0000-4000-8000-000000000010",
+        "sku": "COTTON-5",
+        "createdAt": "2026-11-04T10:00:00.000Z",
+        "updatedAt": "2026-11-04T10:00:00.000Z"
+      }
+    ],
+    "variantsPagination": {
+      "limit": 20,
+      "offset": 0,
+      "totalCount": 6,
+      "hasMore": false,
+      "nextOffset": null
+    },
+    "categoryId": null,
+    "externalKey": "COTTON-001",
+    "category": "Clothing",
+    "colorOptionName": "color",
+    "createdAt": "2026-11-04T10:00:00.000Z",
+    "updatedAt": "2026-11-04T10:00:00.000Z",
+    "images": [
+      {
+        "id": "00000007-0000-4000-8000-000000000001",
+        "productId": "00000004-0000-4000-8000-000000000010",
+        "secureUrl": "https://images.example.invalid/cotton.jpg",
+        "position": 0,
+        "isMain": true,
+        "optionName": null,
+        "optionValue": null,
+        "width": 800,
+        "height": 800,
+        "bytes": 12345,
+        "format": "jpg",
+        "createdAt": "2026-11-04T10:00:00.000Z",
+        "updatedAt": "2026-11-04T10:00:00.000Z"
+      }
+    ]
+  }
+}

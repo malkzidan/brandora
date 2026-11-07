@@ -170,22 +170,21 @@ def test_only_trusted_socket_peer_can_assert_https(peer,forwarded,code):
 
 @pytest.mark.parametrize("cidr",["*","0.0.0.0/0","::/0","not-an-ip"])
 def test_proxy_configuration_rejects_wildcards_and_invalid_entries(cidr):
-    with pytest.raises(ValueError):
+    with pytest.raises(ConfigError):
         OfflineHarness(trusted_proxy_cidrs=(cidr,))
 
 
 def test_ready_is_config_only_and_release_factory_has_no_legacy_provider(monkeypatch,harness):
     from app import server
     from dataclasses import replace
-    config=replace(harness.settings,app_env="staging",trusted_proxy_cidrs=("10.1.2.3/32",),groq_api_key=None)
+    config=replace(harness.settings,app_env="staging",trusted_proxy_cidrs=("10.1.2.3/32",))
     monkeypatch.setattr(server,"load_settings",lambda:config)
     app=server.create_application()
     client=TestClient(app)
-    assert client.get("/health/live").json()=={"status":"ok"}
+    assert client.get("/health/live").json()["status"]=="ok"
     assert client.get("/ready").json()=={"status":"configured","backendLiveVerified":False,"ordersEnabled":False}
     assert client.post("/v1/ai/respond",json={}).status_code==404
-    assert app.state.providers.name=="rules"
-    assert app.state.orchestrator is None
+    assert app.state.settings.ai_provider=="groq"
     assert not harness.calls and not harness.model_calls
 
 
@@ -381,17 +380,11 @@ def test_legacy_context_profile_cannot_gain_history_tool_permissions(harness):
     assert result.status_code==401 and not harness.calls
 
 
-def test_supplied_history_requires_explicit_compatibility_route_and_old_profile():
-    h=OfflineHarness(supplied_context_compat_enabled=True)
-    body={**h.body("how much is that one?"),"historyStatus":"complete", "history":[
-        {"id":identifier(9,550),"senderType":"CUSTOMER","content":"black tshirt size L"}]}
-    raw,headers=h.encode(body,aud="brandora-ai",scope="products:read")
-    client=TestClient(h.app)
-    assert client.post("/v2/ai/respond",content=raw,headers=headers).status_code==401
-    result=client.post("/v2/ai/respond-with-context",content=raw,headers=headers)
-    assert result.status_code==200 and "275.00 EGP" in result.json()["reply"]
-    assert result.headers["x-ai-contract"]=="supplied-context-v1"
-    assert not any(c["tool"]=="get_conversation_history" for c in h.calls)
+def test_supplied_context_route_cannot_be_reenabled():
+    with pytest.raises(ConfigError):
+        OfflineHarness(supplied_context_compat_enabled=True)
+
+
 
 
 def test_reversed_model_alternatives_are_semantically_equivalent(harness):

@@ -1,6 +1,5 @@
 """Reviewed Railway launcher. Fail closed; no legacy providers or proxy wildcard."""
 import os
-from dataclasses import replace
 
 from .config import ConfigError,load_settings
 
@@ -14,19 +13,13 @@ def create_application():
     if settings.enable_dev_endpoints:
         raise ConfigError("Railway must not enable development endpoints")
     from .http import create_app
-    # Legacy v1 remains in main:app for compatibility testing, never the release
-    # launcher. Its model settings cannot activate Gemini in this service.
-    return create_app(replace(settings,ai_provider="rules",legacy_api_enabled=False,enable_dev_endpoints=False))
+    return create_app(settings)
 
 
 def main():
     import uvicorn
-    try:
-        port=int(os.getenv("PORT","8080"))
-        if not 1 <= port <= 65535:
-            raise ValueError()
-    except ValueError:
-        raise ConfigError("PORT must be a valid TCP port") from None
+    from .config import parse_port
+    port=parse_port(os.getenv("PORT","8080"))
     uvicorn.run(create_application(),host="0.0.0.0",port=port,proxy_headers=False,
                 access_log=False,timeout_keep_alive=5,limit_concurrency=64)
 

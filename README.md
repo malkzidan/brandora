@@ -1,69 +1,48 @@
 # Brandora AI
 
-FastAPI service for grounded, read-only customer product enquiries. Malak
-maintains and deploys this repository independently from the NestJS Backend.
+**Development version ready for local integration testing. Not a production-ready release.**
 
-## Stack and architecture
+One authenticated, read-only conversation engine: Groq for structured language
+understanding and natural composition; Python for authorization, bounded tools,
+Product/Variant evidence, deterministic policy and final response validation.
 
-Python, FastAPI, Pydantic, HTTPX and Groq. The canonical pipeline uses Groq for
-structured interpretation and constrained replies, with deterministic fallback.
-Python controls bounded retrieval; Backend owns authorization, prices and stock.
+Canonical endpoint: `POST /v2/ai/respond`. Request: businessId, customerId,
+conversationId, messageId, message. History is retrieved only when needed.
+Response: intent, reply, requiresReview, orderCandidate=null. No Orders or stock
+writes. Human review never implies that a notification was delivered.
 
-## Capabilities
+Purchase intent now has a scoped, in-memory draft state: selection, quantity,
+observed item subtotal, missing facts and explicit confirmation. Confirmation
+revalidates Product evidence and returns an unavailable-submission response;
+Backend Orders APIs and durable quotes do not yet exist. Nothing is persisted
+or reserved by this AI. See [the current implementation handoff](docs/BACKEND_INTEGRATION.md#current-order-draft-contract--2026-11-08).
 
-- Product discovery, dynamic variant options, prices and availability.
-- Signed service context and business-scoped read-only Backend tools.
-- On-demand authorized history when Backend persistence is available.
-- E0-3 responses: intent, reply, requiresReview and orderCandidate.
-- Clarification when evidence, option selection or history is insufficient.
-
-## Local setup
-
-Use Python 3.12 or another version supported by [requirements](requirements.txt):
-
-```sh
-python -m venv .venv
-```
-
-Activate that environment, then install development dependencies:
-
-```sh
-python -m pip install -r requirements-dev.txt
-```
-
-Use `.env.example` as a template; keep private settings out of Git. For real
-local Backend reads, obtain only the generated AI configuration fragment and run:
-
-```sh
-python -m app.local --env-file .env.local
-```
-
-See the [local Postman guide](docs/LOCAL_BACKEND_POSTMAN.md) for environment
-activation, keys, loopback startup and the isolated Backend fixture.
-
-## Tests
-
-In a clean local test terminal, disable implicit dotenv loading and use rules:
+Production: `python -m app.server`. `main:app` uses the same FastAPI factory.
+The checked-in Railway command is unchanged. No deployment was performed.
 
 ```powershell
-$env:PYTHON_DOTENV_DISABLED='1'
+python -m venv .venv
+.\.venv\Scripts\python -m pip install -r requirements-dev.txt
 $env:AI_PROVIDER='rules'
-python -m pytest -q -p no:cacheprovider
+.\.venv\Scripts\python -m pytest -q -p no:cacheprovider
+.\.venv\Scripts\python -m app.offline_demo --evaluate
 ```
 
-These tests use deterministic or mocked transports. They do not prove live Groq
-or production readiness. See [handoff and verification](docs/HANDOFF.md).
+The offline harness uses synthetic signed requests, Backend and Groq transports;
+it never substitutes mocks into production. Release configuration fails closed.
+No implicit .env loading occurs; see [.env.example](.env.example).
 
-## API and current status
+Backend feature/product-management and main were inspected at
+`3f37c4c79f7caa5da99dc0f60f2e87f61e3d2b62`. Product Management DTOs are supported.
+Backend `feature/backend-ai-integration` implements `/internal/ai/data` and the
+OWNER-protected AI initiation route at `f7c826fc76bc0ab8569ae0ed25106ff19bdaae45`.
+That code is absent from `main`; its registered conversation store intentionally
+returns 503. Live Backend, real conversation persistence and live Groq remain
+unverified. See the compatibility matrix in the Backend integration guide.
 
-Canonical endpoint: `POST /v2/ai/respond`. Its five-field request and signed
-context are described in the [contract handoff](docs/FINAL_BACKEND_AI_HANDOFF.md).
-The local harness supports independent synthetic messages over real local HTTP.
-Production Conversations remain deferred; integration is disabled by default.
-Live Groq is unverified, orderCandidate stays null, and Orders are not created.
-Cloudinary, image recognition and permanent Excel storage are separate work.
-
-Production continues to use `python -m app.server` and the existing Railway
-configuration. `/ready` checks configuration, not live Backend/Groq acceptance.
-See [release readiness](docs/BRANDORA_RAILWAY_READINESS.md); deployment requires
-separate owner approval. The development runner is never the production entry point.
+- [Architecture and V1/V2 decisions](docs/ARCHITECTURE.md)
+- [Canonical API and integration-branch tool contract](docs/API_CONTRACT.md)
+- [Backend compatibility and external tasks](docs/BACKEND_INTEGRATION.md)
+- [Local/offline development](docs/LOCAL_DEVELOPMENT.md)
+- [Testing and exact verification results](docs/TESTING.md)
+- [Controlled staging configuration](docs/DEPLOYMENT.md)

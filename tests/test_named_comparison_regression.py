@@ -7,20 +7,20 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from google.genai import models,types,errors
 
-from app.chat.__main__ import build
+from tests.support import build
 from app.chat.application import ChatSession
 from app.chat.understanding import ConversationInterpreter,Meaning,Selection,rules_meaning
 from app.chat.natural import NaturalReply,NaturalResponder
 from app.chat.synthetic import SyntheticBackend
 from app.data.search import search_terms,canonical_search
 from app.pipeline.price_comparison import compare_verified_pair
-from app.providers.failover import ProviderChain
 from app.providers.groq import GroqClient
-from app.providers.gemini import GeminiClient
 from app.providers.structured import parse_structured,wire_json_schema,classify_failure,StructuredOutputError
-from tests.fake_gemini import FakeGemini,gemini_settings
+from tests.support import FakeStructured as FakeStructured
+from app.config import Settings
+def synthetic_settings():
+    return Settings(ai_provider="rules")
 
 
 FIRST="أنا محتارة بين الأسود والأبيض، وعايزة مقاس L، أنهي واحد عندكم أرخص؟"
@@ -80,13 +80,13 @@ async def test_exact_two_turn_live_regression(mode):
 
 
 @pytest.mark.anyio
-async def test_gemini_compatible_structured_fields_and_raw_noisy_search():
+async def test_structured_compatible_structured_fields_and_raw_noisy_search():
     payload=meaning(search=NAMED)
-    fake=FakeGemini({"r-a":json.dumps(payload),"g-a":composition()},gemini_max_retries=1)
+    fake=FakeStructured({"r-a":json.dumps(payload),"g-a":composition()},gemini_max_retries=1)
     b=SyntheticBackend()
     turn=await ChatSession(b.data(),b.scope(),ConversationInterpreter(fake,fake.settings),NaturalResponder(fake,fake.settings)).send(
         NAMED,context_token=b.token(b.scope()))
-    assert turn.understanding.source=="gemini_understanding"
+    assert turn.understanding.source=="groq_understanding"
     assert turn.understanding.meaning.search==NAMED  # valid parsed search, not logged at runtime
     assert turn.understanding.meaning.product_handle is None
     assert turn.understanding.meaning.options=={"size":"L"}
@@ -104,8 +104,8 @@ async def test_groq_compatible_http_understanding_and_reply():
         seen.append(name)
         content=json.dumps(meaning(search="cotton t-shirt")) if name=="Meaning" else composition()
         return httpx.Response(200,json={"choices":[{"finish_reason":"stop","message":{"content":content}}]})
-    settings=replace(gemini_settings(),groq_api_key="synthetic")
-    chain=ProviderChain([("groq",GroqClient(settings,transport=httpx.MockTransport(handler)))],settings)
+    settings=replace(synthetic_settings(),groq_api_key="synthetic")
+    chain=GroqClient(settings,transport=httpx.MockTransport(handler))
     b=SyntheticBackend()
     turn=await ChatSession(b.data(),b.scope(),ConversationInterpreter(chain,settings),NaturalResponder(chain,settings)).send(
         NAMED,context_token=b.token(b.scope()))
@@ -118,16 +118,15 @@ async def test_groq_compatible_http_understanding_and_reply():
 @pytest.mark.parametrize("bad",[meaning(search="luxury hoodie"),meaning(search=""),meaning(product_handle="p0"),
     meaning(option_alternatives={}),meaning(options={"size":"M"})])
 async def test_unusable_primary_semantics_trigger_controlled_provider_attempt(bad):
-    primary=FakeGemini({"r-a":json.dumps(bad),"r-b":json.dumps(bad)},gemini_max_retries=1)
-    secondary=FakeGemini({"r-a":json.dumps(meaning()),"g-a":composition()},gemini_max_retries=1)
+    primary=FakeStructured({"r-a":json.dumps(bad),"r-b":json.dumps(bad)},gemini_max_retries=1)
     settings=primary.settings
-    chain=ProviderChain([("gemini",primary),("groq",secondary)],settings)
     b=SyntheticBackend()
-    turn=await ChatSession(b.data(),b.scope(),ConversationInterpreter(chain,settings),NaturalResponder(chain,settings)).send(
+    turn=await ChatSession(b.data(),b.scope(),ConversationInterpreter(primary,settings),NaturalResponder(None,settings)).send(
         NAMED,context_token=b.token(b.scope()))
-    assert turn.understanding.source=="groq_understanding"
+    assert turn.understanding.source=="rules"
     assert turn.understanding.provider_diagnostics and turn.execution.diagnostics.backend_calls==2
     assert_pair(turn)
+
 
 
 @pytest.mark.anyio
@@ -212,48 +211,9 @@ async def test_decimal_difference_is_exact_even_with_small_external_context():
         assert compare_verified_pair(turn.execution.plan).difference==Decimal("0.01")
 
 
-def test_exact_natural_reply_schema_serializes_through_installed_sdk():
-    config=types.GenerateContentConfig(system_instruction="synthetic",temperature=.3,response_mime_type="application/json",
-                                       response_json_schema=wire_json_schema(NaturalReply))
-    params=types._GenerateContentParameters(model="synthetic-model",contents="synthetic",config=config)
-    wire=models._GenerateContentParameters_to_mldev(SimpleNamespace(vertexai=False),params)
-    generation=wire["generationConfig"]
-    assert generation["responseMimeType"]=="application/json" and "responseSchema" not in generation
-    schema=generation["responseJsonSchema"]
-    assert set(schema["required"])=={"sentences","warmth","question_style"}
-    assert schema["additionalProperties"] is False
-    assert schema["properties"]["sentences"]["items"]["$ref"]=="#/$defs/Sentence"
-    assert schema["$defs"]["Sentence"]["additionalProperties"] is False
+def test_natural_reply_schema_is_closed():
+    from app.providers.groq import groq_schema
+    wire=groq_schema(NaturalReply)
+    assert wire["json_schema"]["strict"] is True
+    assert set(wire["json_schema"]["schema"]["required"])=={"sentences","warmth","question_style"}
     assert isinstance(parse_structured(NaturalReply,composition()),NaturalReply)
-
-
-@pytest.mark.anyio
-async def test_actual_gemini_generate_config_for_natural_reply():
-    client=GeminiClient(gemini_settings())
-    configs=[]
-    async def generate_content(**kwargs):
-        configs.append(kwargs["config"])
-        return types.GenerateContentResponse(candidates=[types.Candidate(content=types.Content(parts=[types.Part(text=composition())]),finish_reason="STOP")])
-    client._client=SimpleNamespace(aio=SimpleNamespace(models=SimpleNamespace(generate_content=generate_content)))
-    parsed,_=await client.call(stage="conversation-reply",models=("synthetic-model",),system="synthetic",user="synthetic",
-                              schema=NaturalReply,parse=lambda s:parse_structured(NaturalReply,s),temperature=.3)
-    assert isinstance(parsed,NaturalReply)
-    assert configs[0].response_schema is None and configs[0].response_json_schema==wire_json_schema(NaturalReply)
-
-
-@pytest.mark.parametrize("field,category,hint",[
-    ("generation_config.response_json_schema.properties.PRIVATE_FIELD","api_schema_error","response_json_schema"),
-    ("generationConfig.responseSchema","api_schema_error","response_schema"),
-    ("contents.PRIVATE_FIELD","api_request_error",None)])
-def test_http400_field_violations_only_expose_fixed_schema_hint(field,category,hint):
-    error=errors.ClientError(400,{"error":{"code":400,"message":"Invalid argument PRIVATE_CUSTOMER", "details":[
-        {"@type":"type.googleapis.com/google.rpc.BadRequest","fieldViolations":[{"field":field,"description":"PRIVATE_PAYLOAD"}]}]}})
-    result=classify_failure(error,"sdk")
-    assert result.category==category and result.schema_hint==hint
-    assert "PRIVATE" not in str(result)
-
-
-def test_generic_http400_remains_unresolved_not_automatically_schema_error():
-    error=errors.ClientError(400,{"error":{"message":"Invalid argument"}})
-    result=classify_failure(error,"sdk")
-    assert result.category=="api_request_error" and result.schema_hint is None

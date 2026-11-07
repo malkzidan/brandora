@@ -6,7 +6,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 from app.config import Settings
 from app.local import create_local_application
-from app.products_api import validate_canonical_result
+from app.api import validate_canonical_result
 from app.schemas.response import AiResponse
 
 
@@ -77,7 +77,7 @@ def test_canonical_output_bounds(reply):
 
 def test_canonical_ascii_boundary():
     result = AiResponse(intent="INQUIRY", reply="x" * 20000, requiresReview=False, orderCandidate=None)
-    assert validate_canonical_result(result) is result
+    assert validate_canonical_result(result).model_dump() == result.model_dump()
     assert set(result.model_dump()) == {"intent", "reply", "requiresReview", "orderCandidate"}
 
 
@@ -87,7 +87,7 @@ def test_oversized_canonical_response_returns_sanitized_503(monkeypatch):
     async def oversized(*args):
         return SimpleNamespace(response=AiResponse(
             intent="INQUIRY", reply="x" * 20001, requiresReview=False, orderCandidate=None)), "not_requested"
-    monkeypatch.setattr("app.products_api.execute_conversation", oversized)
+    monkeypatch.setattr("app.api.execute_conversation", oversized)
     response = harness.send(harness.body("price"))
     assert response.status_code == 503
     assert response.json() == {"detail": "AI response unavailable"}

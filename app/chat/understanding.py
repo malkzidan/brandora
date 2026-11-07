@@ -17,11 +17,11 @@ from ..nlu import detect_language, extract_entities, normalize, is_decline, is_p
 from ..schemas import Intent, OWNER_REVIEW_INTENTS
 from ..schemas.backend import Product
 from ..schemas.inquiry import Inquiry
-from ..providers.structured import GeminiJSONModel, parse_structured, classify_failure, StructuredOutputError
+from ..providers.structured import StructuredJSONModel, parse_structured, classify_failure, StructuredOutputError
 from ..providers.base import ProviderUnavailable
 
 
-class Meaning(GeminiJSONModel):
+class Meaning(StructuredJSONModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
     act: Literal["product", "price", "purchase", "compare", "review", "other"]
     product_handle: StrictStr | None = Field(max_length=12)
@@ -124,7 +124,7 @@ def rules_meaning(text: str, previous: Selection) -> Meaning:
         known_context = prior_terms | {term for p in previous.products for term in search_terms(p.name)}
         new_noun = bool(set(search_terms(text)) - known_context)
     prior = len(previous.products) == 1 and not named and not new_noun and (
-        bool(options) or entities.quantity is not None or any(w in normalized for w in
+        bool(options) or entities.quantity is not None or price or any(w in normalized for w in
         ("منه", "منها", "meno", "it", "that", "same", "غيرت", "بدل", "مقاس", "size", "بكام", "stock", "left", "مخزون", "فاضل")))
     act = "purchase" if purchase else "price" if price else "product"
     if prior and quantity is not None and not price:
@@ -165,6 +165,9 @@ def asks_stock_quantity(text: str) -> bool:
 
 def needs_conversation_history(text: str) -> bool:
     """Deterministic selector demand, never a model-authorized tool call."""
+    from ..pipeline.extensions import is_order_confirmation
+    if is_order_confirmation(text):
+        return True
     route=route_current_inquiry(text)
     if declines_selection(text) or is_pure_confirmation(text) or any(
         i in {Intent.GREETING,Intent.THANKYOU,Intent.HELP,*OWNER_REVIEW_INTENTS} for i in route.intents):
@@ -283,10 +286,10 @@ class ConversationInterpreter:
                     user=prompt, schema=Meaning,
                     parse=lambda s: validate_selection(parse_structured(Meaning, s)),
                     temperature=0.0, mime="application/json"),
-                    timeout=min(8.0, self.settings.gemini_total_timeout_seconds))
+                    timeout=min(8.0, self.settings.chat_total_timeout_seconds))
                 proposal, _ = provider_result
                 proposal = validate_selection(proposal)
-                meaning, source = proposal, getattr(provider_result,"provider","gemini") + "_understanding"
+                meaning, source = proposal, getattr(provider_result,"provider","groq") + "_understanding"
                 if baseline.script == "franco":
                     meaning = meaning.model_copy(update={"script":"franco","language":"ar"})
                 diagnostics = getattr(provider_result,"failures",())

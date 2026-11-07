@@ -1,4 +1,4 @@
-"""Standalone client for the proposed read-only Backend AI data contract.
+"""Read-only client for Backend feature/backend-ai-integration's AI data contract.
 
 Context tokens are supplied per call, never stored on the reusable client.
 Identifiers use canonical UUID syntax without version/variant restrictions;
@@ -139,10 +139,16 @@ class BackendClient:
                 timeout=self._timeout, transport=self._transport,
                 follow_redirects=False, trust_env=False,
             ) as client:
-                response = await client.post(
-                    self._endpoint, headers=headers,
-                    json={"tool": tool, "arguments": args},
-                )
+                async with client.stream("POST", self._endpoint, headers=headers,
+                        json={"tool": tool, "arguments": args}) as stream:
+                    chunks = []
+                    size = 0
+                    async for chunk in stream.aiter_bytes():
+                        size += len(chunk)
+                        if size > 131072:
+                            raise BackendResponseError("Backend response exceeds payload limit")
+                        chunks.append(chunk)
+                    response = httpx.Response(stream.status_code, content=b"".join(chunks))
         except httpx.TimeoutException:
             raise BackendTimeoutError("Backend request timed out") from None
         except httpx.HTTPError:

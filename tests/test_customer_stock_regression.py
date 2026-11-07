@@ -5,7 +5,7 @@ from dataclasses import replace
 import pytest
 
 from app.offline_demo import OfflineHarness
-from app.chat.__main__ import build
+from tests.support import build
 from app.chat.application import ChatSession
 from app.chat.natural import clauses_for, NaturalReply, Sentence, validate_composition
 from app.chat.understanding import needs_conversation_history

@@ -2,8 +2,8 @@
 
 Used for three things:
   1. Product matching (typo tolerant) for every request, regardless of who classified the intent.
-  2. Entity extraction (quantity / colour / size / time) as a safety net next to Gemini.
-  3. A complete rule-based intent classifier, used when Gemini is unavailable (and by the tests).
+  2. Entity extraction (quantity / colour / size / time) as a safety net next to Groq.
+  3. A complete rule-based intent classifier, used when Groq is unavailable (and by the tests).
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from difflib import SequenceMatcher
 from typing import Any, Iterable, Mapping, Sequence
 
 from .schemas import FaqTopic, Intent, RouterResult
-from .schemas.request import CatalogItem as Product
+from .schemas.matching import MatchingProduct as Product
 
 # --------------------------------------------------------------------------- normalization
 
@@ -719,7 +719,7 @@ def _service_intents(sig: Mapping[str, bool], editing_pending_order: bool) -> li
 
 
 def classify_rules(text: str, ctx: RuleContext) -> RouterResult:
-    """Deterministic fallback classifier. Returns the same shape Gemini returns."""
+    """Deterministic fallback classifier. Returns the same shape Groq returns."""
     norm = normalize(text)
     ent = extract_entities(text)
     matches = find_products(ent.product_tokens, ctx.products, ent.max_price)

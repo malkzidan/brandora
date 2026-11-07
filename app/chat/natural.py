@@ -18,18 +18,18 @@ from ..pipeline.evidence_planner import Resolution
 from ..pipeline.price_comparison import compare_verified_pair
 from ..providers.base import ProviderUnavailable
 from ..providers.evidence import GroundedGeneration
-from ..providers.structured import GeminiJSONModel, parse_structured, StructuredOutputError, classify_failure
+from ..providers.structured import StructuredJSONModel, parse_structured, StructuredOutputError, classify_failure
 from ..schemas.backend import InventoryState
 from ..schemas.response import E03Intent, ReviewReason
-from .responding import ConversationalResponder
+from ..pipeline.evidence_guard import deterministic_fallback
 
 
-class Sentence(GeminiJSONModel):
+class Sentence(StructuredJSONModel):
     fact_ids: list[StrictStr] = Field(min_length=1, max_length=16)
     join: Literal["and", "sentences", "semicolon"]
 
 
-class NaturalReply(GeminiJSONModel):
+class NaturalReply(StructuredJSONModel):
     sentences: list[Sentence] = Field(min_length=1, max_length=24)
     warmth: Literal["neutral", "friendly"]
     question_style: Literal["direct", "gentle"]
@@ -86,7 +86,8 @@ def clauses_for(plan):
     clauses, questions = [], []
     def add(text,kind):
         clauses.append(FactClause(f"f{len(clauses)}",text,kind))
-    if len(plan.products) > 1:
+    if (len(plan.products) > 1 or plan.resolution == Resolution.PRODUCT_AMBIGUITY
+            or "partial_catalog_not_globally_unique" in plan.limitations):
         add(" / ".join(p.name for p in plan.products if p.active),"products")
         questions.append(("تقصد أنهي منتج؟", "ممكن تحدد المنتج اللي تقصده؟") if ar
                          else ("Which product do you mean?", "Which of these products did you mean?"))
@@ -94,11 +95,15 @@ def clauses_for(plan):
     product = plan.products[0]
     matched = [v for v in plan.variants if v.variant_id in plan.matching_variant_ids
                and v.active and v.parent_active and v.options_verified]
-    if not product.active or not matched:
+    if not product.active:
+        add("المنتج ده مش معروض للشراء حاليًا" if ar else "This product is not offered for purchase", "inactive")
+        return tuple(clauses),tuple(questions)
+    if not matched:
         add("مش قادر أتحقق من اختيار نشط بالمواصفات دي" if ar
             else "I can't verify an active variant matching those selections", "unverified")
         questions.append(("تحب نشوف لون أو مقاس تاني؟",)*2 if ar else ("Would you like to check another color or size?",)*2)
     first_size = None
+    availability_caveat = False
     for index,v in enumerate(matched[:6]):
         size = next((value for key,value in v.option_values if key.lower() == "size" or key in {"مقاس","المقاس"}),None)
         label = option_label(v.option_values, plan.language, common_size=first_size if plan.comparison else None,script=plan.reply_script)
@@ -125,9 +130,11 @@ def clauses_for(plan):
         if v.inventory == InventoryState.RECORDED_ZERO:
             text += "; mesh metah delwa2ty" if franco else "، مش متاح حاليًا حسب آخر معلومات عندنا" if ar else "; currently out of stock according to the latest information"
         elif focus == "stock" and v.recorded_quantity is not None and plan.allow_stock_quantity_disclosure:
-            text += f"; el metah {v.recorded_quantity}, mehtag ta2keed" if franco else f"، المتاح حسب آخر معلومات عندنا {v.recorded_quantity} قطع، والتوافر النهائي محتاج تأكيد" if ar else f"; latest availability: {v.recorded_quantity} units; final availability needs confirmation"
+            text += f"; el metah {v.recorded_quantity}" if franco else f"، المتاح حسب آخر معلومات عندنا {v.recorded_quantity} قطع" if ar else f"; latest availability: {v.recorded_quantity} units"
+            availability_caveat = True
         elif focus in {"availability", "stock"} and v.inventory == InventoryState.RECORDED_POSITIVE:
-            text += "; el tawafor mehtag ta2keed" if franco else "، ظاهر إنه متاح حسب آخر معلومات عندنا، والتوافر النهائي محتاج تأكيد" if ar else "; appears available according to the latest information; final availability needs confirmation"
+            text += "; zaher enno metah" if franco else "، ظاهر إنه متاح حسب آخر معلومات عندنا" if ar else "; appears available according to the latest information"
+            availability_caveat = True
         elif focus in {"availability","purchase","discovery","stock"} and v.inventory == InventoryState.UNTRACKED:
             text += "; el tawafor mehtag ta2keed" if franco else "، والتوافر محتاج تأكيد" if ar else "; availability needs confirmation"
         if v.effective_price is None and not show_price and focus != "stock":
@@ -136,6 +143,9 @@ def clauses_for(plan):
         if plan.requested_quantity is not None and v.recorded_quantity is not None and plan.requested_quantity > v.recorded_quantity:
             add("el kammiya mesh metaha bel kamel delwa2ty" if franco else "الكمية دي مش متاحة بالكامل حاليًا" if ar
                 else "the full requested quantity is not currently available", "quantity_unavailable")
+    if availability_caveat:
+        add("el tawafor el neha2y mehtag ta2keed" if franco else "التوافر النهائي محتاج تأكيد" if ar
+            else "Final availability needs confirmation", "availability_caveat")
     if len(matched) > 6:
         add("فيه اختيارات تانية كمان؛ المعروض هنا جزء منها" if ar
             else "More verified variants exist; these are only some of them", "more_options")
@@ -178,6 +188,10 @@ def clauses_for(plan):
             questions.append(("mehtag kam ket3a?","t7eb kam ket3a?") if franco else ("محتاج كام قطعة؟","تحب كام قطعة؟") if ar else ("How many would you like?","What quantity would you like?"))
     if "variant_search_incomplete" in plan.limitations or "partial_catalog_not_globally_unique" in plan.limitations:
         add("ممكن يكون فيه اختيارات تانية لسه ما اتأكدتش منها" if ar else "There may be other options I haven't confirmed yet", "partial")
+    for statement in plan.statements:
+        if (statement.kind=='order_policy' and any(s.tool=='deterministic_template' and s.path=='read_only_safety'
+                                               for s in statement.sources)):
+            add(statement.text,'order_policy')
     return tuple(clauses),tuple(questions)
 
 
@@ -206,8 +220,11 @@ def render(plan, proposal, clauses, questions):
     return plan.to_response().model_copy(update={"reply":reply})
 
 
-class NaturalResponder(ConversationalResponder):
+class NaturalResponder:
     """Provider-independent guarded composer used by every local chat mode."""
+    def __init__(self, client=None, settings=None):
+        self.client, self.settings = client, settings
+
     def fallback(self, plan, reason, violations=()):
         try:
             clauses, questions = clauses_for(plan)
@@ -218,7 +235,8 @@ class NaturalResponder(ConversationalResponder):
                                           fallback_reason=reason,guard_violations=tuple(violations))
         except (ValueError,TypeError,AttributeError):
             pass
-        return super().fallback(plan,reason,violations)
+        return GroundedGeneration(deterministic_fallback(plan, GroundingLimits()), "deterministic",
+                                  fallback_reason=reason, guard_violations=tuple(violations))
 
     async def generate(self,plan):
         try:
@@ -230,7 +248,7 @@ class NaturalResponder(ConversationalResponder):
         default = NaturalReply(sentences=[Sentence(fact_ids=[c.id for c in clauses],join="and")],
                                warmth="neutral",question_style="direct")
         proposal,source,model,failure,diagnostics = default,"conversational_rules",None,None,()
-        if self.client is not None:
+        if self.client is not None and self.settings.generator_enabled:
             payload = {"language":plan.language,"focus":plan.reply_focus,"comparison":plan.comparison,
                        "facts":[{"id":c.id,"clause":c.text,"kind":c.kind} for c in clauses],
                        "questionsRequired":bool(questions)}
@@ -251,7 +269,7 @@ class NaturalResponder(ConversationalResponder):
                     timeout=min(8.0,self.settings.chat_total_timeout_seconds))
                 proposal,model = provider_result
                 validate_composition(proposal,clauses)
-                source = getattr(provider_result,"provider","gemini") + "_conversation"
+                source = getattr(provider_result,"provider","groq") + "_conversation"
                 diagnostics = getattr(provider_result,"failures",())
             except Exception as error:
                 proposal = default
